@@ -1,0 +1,5 @@
+%dw 2.0
+
+type auto_dac4212b_f6dd_458e_96bf_e5c7a451e63a_Output_Variables_customerCredit = {|  |} {"typeId": "java.io.Serializable",
+"typeAlias": "Serializable"}
+

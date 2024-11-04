@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<os:object-store name="credit-os" doc:name="Object store" doc:id="984e5c0c-a3e6-4d9d-850a-83a45b92f09a" />
+	<flow name="add-reserve-credit" doc:id="44084e16-f0c5-4d19-8a26-ceaa303371d5" >
+		<os:retrieve doc:name="customer credit" doc:id="5c0c3077-b7f1-43ca-a98b-8afc006b87e0" key="#[vars.customerId]" objectStore="credit-os" target="customerCredit">
+				<os:default-value><![CDATA[#[%dw 2.0
+output application/java
+---
+{
+	"amount": 0
+}]]]></os:default-value>
+			</os:retrieve>
+		<ee:transform doc:name="update customer credit" doc:id="2cbe9cb1-bbbb-4da4-a175-eff5947f6395">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+fun updateCredit(op,amt)
+= if(op=="add")
+	vars.customerCredit.amount as Number + amt as Number
+  else
+  	vars.customerCredit.amount as Number - amt as Number
+---
+{
+	"amount": updateCredit(payload.operation,payload.amount)
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+		<logger level="INFO" doc:name="customer credit" doc:id="9fb8eaed-5110-49ca-bb26-e518729d5b76" message="#[payload]"/>
+		<os:store doc:name="customer credit" doc:id="966cde2b-527d-45b3-9447-b5ab75b8537e" key="#[vars.customerId]" objectStore="credit-os"/>
+	</flow>
+	<flow name="get-credit" doc:id="dac4212b-f6dd-458e-96bf-e5c7a451e63a" >
+		<os:retrieve doc:name="customer credit" doc:id="f81a2348-6e6c-41f5-bc37-64feb3ed4972" key="#[vars.customerId]" objectStore="credit-os">
+			<os:default-value ><![CDATA[#[%dw 2.0
+output application/java
+---
+{
+	"amount": 0
+}]]]></os:default-value>
+		</os:retrieve>
+	</flow>
+</mule>

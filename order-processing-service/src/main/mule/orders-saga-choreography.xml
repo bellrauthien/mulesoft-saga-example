@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:customer-api="http://www.mulesoft.org/schema/mule/customer-api"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:order-api="http://www.mulesoft.org/schema/mule/order-api" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/order-api http://www.mulesoft.org/schema/mule/order-api/current/mule-order-api.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/customer-api http://www.mulesoft.org/schema/mule/customer-api/current/mule-customer-api.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<order-api:config name="Order_API_Config" doc:name="Order API Config" doc:id="fe1579e4-5740-48c3-ae0e-59622961d6d0" property_host="order-api-ms.us-e2.cloudhub.io" property_port="80" property_protocol="HTTP" property_basePath="/api"/>
+	<vm:config name="orders-vm" doc:name="VM Config" doc:id="992b241e-bf4a-472c-aacd-8674235bb2c2" >
+		<vm:queues >
+			<vm:queue queueName="order" queueType="PERSISTENT" />
+		</vm:queues>
+	</vm:config>
+	<customer-api:config name="Customer_API_Config" doc:name="Customer API Config" doc:id="67080f13-6477-4b32-9e69-9ceee2aba9ca" property_host="customer-api-ms.us-e2.cloudhub.io" property_port="80" property_protocol="HTTP" property_basePath="/api"/>
+	<vm:config name="credit-vm" doc:name="VM Config" doc:id="ff9dbba9-4dcd-4279-a932-4e7b36e4123c" >
+		<vm:queues >
+			<vm:queue queueName="credit" queueType="PERSISTENT" />
+		</vm:queues>
+	</vm:config>
+	<flow name="create-order" doc:id="8d87fac7-c8c8-4557-b18e-6179e6eaae08" >
+		<order-api:add-order doc:name="Add Order" doc:id="cd20bdf3-ab8d-4484-931b-e39c89d631a8" config-ref="Order_API_Config" target="order">
+			<order-api:add-order-request-data ><![CDATA[#[payload - "customerId"]]]></order-api:add-order-request-data>
+		</order-api:add-order>
+		<ee:transform doc:name="order" doc:id="317cc8b3-b7f7-4efb-82f1-aa6d59201dc1" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload ++ vars.order]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<vm:publish doc:name="new order" doc:id="a5691beb-e04c-4f3f-8a8c-213fb66c0948" config-ref="orders-vm" queueName="order" >
+		</vm:publish>
+	</flow>
+	<flow name="reserve-credit" doc:id="e7dad357-03f8-41e4-81d5-450ecc6d44bd" >
+		<vm:listener queueName="order" doc:name="orders" doc:id="62a0c7a2-e1ed-4c52-9ffb-46507891dc99" config-ref="orders-vm"/>
+		<customer-api:get-customer-credit doc:name="Get Customer Credit" doc:id="84a6600e-5060-4ddc-a094-8d51defb8891" config-ref="Customer_API_Config" customer-id="#[payload.customerId]" target="credit"/>
+		<ee:transform doc:name="order rejected/approved" doc:id="5d9e7328-892b-4014-8536-31ca4f84b76f">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var status =
+	(total,credit) ->
+		if (total <= credit)
+			"approved"
+		else
+			"rejected"
+---
+{
+	"orderId": payload.id,
+	"status": status(payload.total, vars.credit.amount)
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+		<vm:publish doc:name="credit evaluation" doc:id="efb1c684-1f9b-4565-ba38-ac2ea7ffd2bc" config-ref="credit-vm" queueName="credit" />
+	</flow>
+	<flow name="update-order-status" doc:id="949aef57-27df-408d-b516-46111f25a5c4" >
+		<vm:listener doc:name="credit" doc:id="d4ebf4b6-6259-4aea-bc31-e73e00d1f8d4" config-ref="credit-vm" queueName="credit"/>
+		<order-api:update-order doc:name="Update Order" doc:id="d210d87e-7a4f-4d33-8bb5-c295fa699c20" config-ref="Order_API_Config" order-id="#[payload.orderId]">
+			<order-api:update-order-request-data ><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+    "status": payload.status
+}]]]></order-api:update-order-request-data>
+		</order-api:update-order>
+	</flow>
+</mule>

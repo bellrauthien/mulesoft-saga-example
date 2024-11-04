@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<os:object-store name="order-seq-os" doc:name="Object store" doc:id="d6139ac9-74c7-4f2c-b5e9-170d165cdf6e" />
+	<os:object-store name="orders-os" doc:name="Object store" doc:id="630e818e-e236-47ee-840e-14ef4a60b415" />
+	<flow name="get-orders" doc:id="f6bb77ac-807b-4b6b-98b6-7753608b531c">
+		<os:retrieve-all doc:name="orders" doc:id="eb14ff67-9e8c-4e43-a22e-d55d21650ad7" objectStore="orders-os" />
+	</flow>
+	<flow name="get-order-by-id" doc:id="47cb10b4-28df-4fe6-8bb1-2471ce00c13d">
+		<try doc:name="Try" doc:id="f7e0588c-a004-4ac9-858a-88d81f7ddfb6" >
+			<os:retrieve doc:name="order" doc:id="0838b01f-b9f8-4612-a8ff-2716e0634fd6" key="#[vars.orderId]" objectStore="orders-os">
+		</os:retrieve>
+			<error-handler >
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="4b057fc7-2b8f-457b-9feb-df60055e82cb" type="OS:KEY_NOT_FOUND">
+					<ee:transform doc:name="invalid order id" doc:id="372f6a61-8195-468c-aa84-43db62048d18">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message": "Order " ++ vars.orderId ++ " does not exist."
+}]]></ee:set-payload>
+						</ee:message>
+						<ee:variables>
+							<ee:set-variable variableName="httpStatus"><![CDATA[400]]></ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+				</on-error-propagate>
+			</error-handler>
+		</try>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="2e2bffb3-4ca7-4e71-8119-67f6a2b0340a">
+					<set-variable value="404" doc:name="httpStatus" doc:id="13a22485-b8ae-4ea4-bbc4-55027157b4fc" variableName="httpStatus" />
+				</on-error-propagate>
+		</error-handler>
+	</flow>
+	<flow name="create-new-order" doc:id="6fef4232-06c6-446c-8278-057891294569" >
+		<os:retrieve doc:name="order seq" doc:id="e4389365-08bb-4e04-9453-45214c4b7582" key='order-seq' objectStore="order-seq-os" target="orderSeq">
+			<os:default-value ><![CDATA[0]]></os:default-value>
+		</os:retrieve>
+		<ee:transform doc:name="order seq" doc:id="b8e489e3-9225-45cc-a209-d3798588d609" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="orderSeq" ><![CDATA[%dw 2.0
+output application/java
+---
+vars.orderSeq as Number + 1]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<scatter-gather doc:name="Scatter-Gather" doc:id="f853d5fe-dca6-46b7-a62e-dd116e6205f0" >
+			<route >
+				<os:store doc:name='order-seq' doc:id="d8ad9e94-f239-4d94-972b-df2dad7beab9" key="order-seq" objectStore="order-seq-os">
+					<os:value ><![CDATA[#[vars.orderSeq as Number]]]></os:value>
+				</os:store>
+			</route>
+			<route >
+				<ee:transform doc:name="order" doc:id="5e8e3d7b-b8fd-4ca2-9016-be04713ae9ee" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+import * from dw::core::Strings
+ 
+---
+payload ++
+	{
+		"id":leftPad(vars.orderSeq,4,0),
+		"status": "pending"
+	}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<os:store doc:name="order" doc:id="5f8a19cd-f8cc-402d-a01c-77a82ce655e7" objectStore="orders-os" key="#[payload.id]"/>
+			</route>
+		</scatter-gather>
+	</flow>
+	<flow name="update-order" doc:id="6b6f97f0-62a8-4270-84d8-fbaef7647d0e" >
+		<try doc:name="Try" doc:id="3ac3bef0-4f18-4b31-8d47-f7809937be2a" >
+			<os:retrieve doc:name="order" doc:id="042cd729-fcee-4cbf-81ab-54961c85c7db" key="#[vars.orderId]" objectStore="orders-os" target="order" />
+			<error-handler >
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="f1481e0b-47ee-4e31-9a52-fbc6aa41e162" type="OS:KEY_NOT_FOUND">
+					<ee:transform doc:name="invalid order id" doc:id="482a589a-0e31-4209-9b8d-8f363f453d2d">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message": "Order " ++ vars.orderId ++ " does not exist."
+}]]></ee:set-payload>
+						</ee:message>
+						<ee:variables>
+							<ee:set-variable variableName="httpStatus"><![CDATA[400]]></ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+				</on-error-propagate>
+			</error-handler>
+		</try>
+		<ee:transform doc:name="order" doc:id="0395faa0-6d7e-43d5-a88e-97a8fe8ebaff" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+import * from dw::util::Values
+output application/java
+---
+vars.order update "status" with payload.status]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<os:store doc:name="order" doc:id="ece23654-72c7-4478-b90b-9ecafadeba9d" key="#[vars.orderId]" objectStore="orders-os"/>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="f843f816-1e3d-4272-870e-499d9c44e05d" type="OS:KEY_NOT_FOUND">
+				<set-variable value="404" doc:name="httpStatus" doc:id="010c7fd5-53fc-4d98-abdd-0d2464a3b9d3" variableName="httpStatus" />
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+</mule>
